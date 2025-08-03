@@ -1,22 +1,96 @@
-!pip install pandas numpy matplotlib yfinance
+# Librerías necesarias e imports
+!pip install pandas numpy matplotlib yfinance seaborn 
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import yfinance as yf
+import seaborn as sns
 
-import yfinance as yf
-import pandas as pd
-pd.set_option('display.float_format', '{:.5f}'.format) # para quitar la notación científica
+# Configurar activo y benchmark
+Activo = 'IDR.MC'
+Benchmark = '^IBEX'
 
-# Define el símbolo de cotización de la acción
-indra = 'IDR.MC'
-ibex = "^IBEX"
+# Descargar datos
+df_activo = yf.download(Activo, start="2020-01-01")
+df_benchmark = yf.download(Benchmark, start="2020-01-01")
 
-# Crea un objeto Ticker para la acción
-df_indra = yf.download(indra, progress=False)
-df_ibex =  yf.download(ibex, progress=False)
+# Calcular LogReturns
+df_activo['LogRet'] = np.log(df_activo['Close'] / df_activo['Close'].shift(1))
+df_benchmark['LogRet'] = np.log(df_benchmark['Close'] / df_benchmark['Close'].shift(1))
 
-# rendimiento a 'dias' días
-def rendimiento(precios,dias=1):
-  r = precios[dias:]/precios[:-dias] -1
-  return r
+# Series de rendimientos alineadas
+returns = pd.concat([
+    df_activo['LogRet'].rename(Activo),
+    df_benchmark['LogRet'].rename(Benchmark)
+], axis=1).dropna()
+
+# Supuesto: 252 días hábiles por año
+trading_days = 252
+
+# Estadísticas descriptivas
+stats_df = pd.DataFrame({
+    "Estadístico": [
+        "Media diaria",
+        "Mediana diaria",
+        "Asimetría",
+        "Curtosis",
+        "Media anualizada (%)",
+        "Volatilidad anualizada (%)",
+        "Correlación"
+    ],
+    Activo: [
+        returns[Activo].mean(),
+        returns[Activo].median(),
+        returns[Activo].skew(),
+        returns[Activo].kurt(),
+        returns[Activo].mean() * trading_days * 100,
+        returns[Activo].std() * np.sqrt(trading_days) * 100,
+        returns.corr().iloc[0, 1]
+    ],
+    Benchmark: [
+        returns[Benchmark].mean(),
+        returns[Benchmark].median(),
+        returns[Benchmark].skew(),
+        returns[Benchmark].kurt(),
+        returns[Benchmark].mean() * trading_days * 100,
+        returns[Benchmark].std() * np.sqrt(trading_days) * 100,
+        returns.corr().iloc[0, 1]
+    ]
+})
+
+# Mostrar tabla
+print("\nResumen Estadísticos Descriptivos Anualizados")
+print(stats_df.to_string(index=False))
+
+# Dashboard de histogramas
+fig, axes = plt.subplots(1, 2, figsize=(18, 6))
+
+sns.histplot(returns[Activo], bins=100, kde=True, color='blue', stat="density", ax=axes[0])
+axes[0].set_title(f'Distribución de Retornos Logarítmicos - {Activo}')
+axes[0].set_xlabel('Retorno Logarítmico')
+axes[0].set_ylabel('Densidad')
+axes[0].grid(True)
+
+sns.histplot(returns[Benchmark], bins=100, kde=True, color='orange', stat="density", ax=axes[1])
+axes[1].set_title(f'Distribución de Retornos Logarítmicos - {Benchmark}')
+axes[1].set_xlabel('Retorno Logarítmico')
+axes[1].set_ylabel('Densidad')
+axes[1].grid(True)
+
+plt.tight_layout()
+plt.show()
+
+# Correlación móvil
+rolling_corr = returns[Activo].rolling(window=60).corr(returns[Benchmark])
+
+plt.figure(figsize=(14, 5))
+plt.plot(rolling_corr, label='Correlación Móvil (60 días)', color='green')
+plt.axhline(returns.corr().iloc[0, 1], color='red', linestyle='--', label='Correlación media')
+plt.title(f'Correlación Móvil entre {Activo} y {Benchmark}')
+plt.xlabel('Fecha')
+plt.ylabel('Correlación')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
