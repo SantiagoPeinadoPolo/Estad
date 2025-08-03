@@ -1,0 +1,22 @@
+!pip install pandas numpy matplotlib yfinance
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import yfinance as yf
+
+import yfinance as yf
+import pandas as pd
+pd.set_option('display.float_format', '{:.5f}'.format) # para quitar la notación científica
+
+# Define el símbolo de cotización de la acción
+indra = 'IDR.MC'
+ibex = "^IBEX"
+
+# Crea un objeto Ticker para la acción
+df_indra = yf.download(indra, progress=False)
+df_ibex =  yf.download(ibex, progress=False)
+
+# rendimiento a 'dias' días
+def rendimiento(precios,dias=1):
+  r = precios[dias:]/precios[:-dias] -1
+  return r
