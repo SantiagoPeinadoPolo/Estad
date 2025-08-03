@@ -1,11 +1,12 @@
 # Librerías necesarias e imports
-!pip install pandas numpy matplotlib yfinance seaborn 
+!pip install pandas numpy matplotlib yfinance seaborn statsmodels
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import yfinance as yf
 import seaborn as sns
+import statsmodels.api as sm
 
 # Configurar activo y benchmark
 Activo = 'IDR.MC'
@@ -59,38 +60,49 @@ stats_df = pd.DataFrame({
     ]
 })
 
-# Mostrar tabla
+# Mostrar tabla de estadísticas
 print("\nResumen Estadísticos Descriptivos Anualizados")
 print(stats_df.to_string(index=False))
 
 # Dashboard de histogramas
-fig, axes = plt.subplots(1, 2, figsize=(18, 6))
+fig, axes = plt.subplots(2, 2, figsize=(18, 10))
 
-sns.histplot(returns[Activo], bins=100, kde=True, color='blue', stat="density", ax=axes[0])
-axes[0].set_title(f'Distribución de Retornos Logarítmicos - {Activo}')
-axes[0].set_xlabel('Retorno Logarítmico')
-axes[0].set_ylabel('Densidad')
-axes[0].grid(True)
+sns.histplot(returns[Activo], bins=100, kde=True, color='blue', stat="density", ax=axes[0, 0])
+axes[0, 0].set_title(f'Distribución de Retornos Logarítmicos - {Activo}')
+axes[0, 0].set_xlabel('Retorno Logarítmico')
+axes[0, 0].set_ylabel('Densidad')
+axes[0, 0].grid(True)
 
-sns.histplot(returns[Benchmark], bins=100, kde=True, color='orange', stat="density", ax=axes[1])
-axes[1].set_title(f'Distribución de Retornos Logarítmicos - {Benchmark}')
-axes[1].set_xlabel('Retorno Logarítmico')
-axes[1].set_ylabel('Densidad')
-axes[1].grid(True)
-
-plt.tight_layout()
-plt.show()
+sns.histplot(returns[Benchmark], bins=100, kde=True, color='orange', stat="density", ax=axes[0, 1])
+axes[0, 1].set_title(f'Distribución de Retornos Logarítmicos - {Benchmark}')
+axes[0, 1].set_xlabel('Retorno Logarítmico')
+axes[0, 1].set_ylabel('Densidad')
+axes[0, 1].grid(True)
 
 # Correlación móvil
 rolling_corr = returns[Activo].rolling(window=60).corr(returns[Benchmark])
+axes[1, 0].plot(rolling_corr, label='Correlación Móvil (60 días)', color='green')
+axes[1, 0].axhline(returns.corr().iloc[0, 1], color='red', linestyle='--', label='Correlación media')
+axes[1, 0].set_title(f'Correlación Móvil entre {Activo} y {Benchmark}')
+axes[1, 0].set_xlabel('Fecha')
+axes[1, 0].set_ylabel('Correlación')
+axes[1, 0].legend()
+axes[1, 0].grid(True)
 
-plt.figure(figsize=(14, 5))
-plt.plot(rolling_corr, label='Correlación Móvil (60 días)', color='green')
-plt.axhline(returns.corr().iloc[0, 1], color='red', linestyle='--', label='Correlación media')
-plt.title(f'Correlación Móvil entre {Activo} y {Benchmark}')
-plt.xlabel('Fecha')
-plt.ylabel('Correlación')
-plt.legend()
-plt.grid(True)
+# Modelo de regresión lineal
+X = sm.add_constant(returns[Benchmark])
+model = sm.OLS(returns[Activo], X).fit()
+
+# Gráfico de regresión
+sns.regplot(x=Benchmark, y=Activo, data=returns, line_kws={'color': 'red'}, ax=axes[1, 1])
+axes[1, 1].set_title(f'Regresión Lineal: {Activo} vs {Benchmark}\nBeta = {model.params[1]:.4f}, Alpha = {model.params[0]:.4f}')
+axes[1, 1].set_xlabel(f'Rendimiento {Benchmark}')
+axes[1, 1].set_ylabel(f'Rendimiento {Activo}')
+axes[1, 1].grid(True)
+
 plt.tight_layout()
 plt.show()
+
+# Mostrar resumen del modelo
+print("\nResumen del modelo de regresión:")
+print(model.summary())
