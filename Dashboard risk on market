@@ -12,135 +12,89 @@ plt.rcParams.update({'font.size': 10})
 pairs = [
     ("HG=F", "GC=F"),   # Copper / Gold
     ("SPHB", "SPMV"),   # High Beta / Low Volatility
-    ("HYG", "LQD")       # High Yield / Investment Grade
+    ("HYG", "LQD")      # High Yield / Investment Grade
 ]
 
 # Definir fecha de inicio
 start_date = "2020-01-01"
 
-# Preparar figura del dashboard de precios relativos
-fig, axes = plt.subplots(len(pairs), 1, figsize=(14, 12), sharex=True)
-fig.suptitle("Dashboard de Control de Riesgo - Precios Relativos y Z-Score", fontsize=16, y=1.02)
+# Crear DataFrame combinado
+combined_data = pd.DataFrame()
 
-# Graficar cada par con Z-score
-for i, (asset1, asset2) in enumerate(pairs):
+# Descargar datos y calcular Z-score para cada par
+for asset1, asset2 in pairs:
     data = yf.download([asset1, asset2], start=start_date)['Close'].dropna()
     ratio = data[asset1] / data[asset2]
     mean = ratio.rolling(window=120).mean()
     std = ratio.rolling(window=120).std()
     zscore = (ratio - mean) / std
 
+    combined_data[f"{asset1}/{asset2} Ratio"] = ratio
+    combined_data[f"{asset1}/{asset2} Mean"] = mean
+    combined_data[f"{asset1}/{asset2} +1Std"] = mean + std
+    combined_data[f"{asset1}/{asset2} -1Std"] = mean - std
+    combined_data[f"{asset1}/{asset2} Z-score"] = zscore
+
+# Calcular volatilidad realizada del S&P 500
+spx_data = yf.download("^SPX", start=start_date)['Close'].dropna()
+spx_returns = np.log(spx_data / spx_data.shift(1)).dropna()
+realized_vol = spx_returns.rolling(window=21).std() * np.sqrt(252)
+combined_data['SPX Realized Volatility'] = realized_vol
+
+# Eliminar filas con NaNs
+combined_data = combined_data.dropna()
+
+# === Dashboard principal ===
+fig, axes = plt.subplots(len(pairs) + 1, 1, figsize=(16, 14), sharex=True)
+fig.suptitle("Dashboard de Control de Riesgo: Ratios, Z-score y Volatilidad SPX", fontsize=18, y=1.02)
+
+# Gráficos de ratios con bandas y Z-score
+for i, (asset1, asset2) in enumerate(pairs):
+    ratio_col = f"{asset1}/{asset2} Ratio"
+    mean_col = f"{asset1}/{asset2} Mean"
+    plus1std_col = f"{asset1}/{asset2} +1Std"
+    minus1std_col = f"{asset1}/{asset2} -1Std"
+    zscore_col = f"{asset1}/{asset2} Z-score"
+
     ax = axes[i]
     ax2 = ax.twinx()
 
-    ax.plot(ratio.index, ratio, label='Ratio', color='blue')
-    ax.plot(mean.index, mean, label='Media 120d', linestyle='--', color='black')
-    ax.fill_between(std.index, mean - std, mean + std, color='gray', alpha=0.3, label='±1 Desv. Std')
+    ax.plot(combined_data.index, combined_data[ratio_col], label='Ratio', color='blue')
+    ax.plot(combined_data.index, combined_data[mean_col], label='Media 120d', linestyle='--', color='black')
+    ax.fill_between(combined_data.index, combined_data[minus1std_col], combined_data[plus1std_col], color='gray', alpha=0.3, label='±1 Desv. Std')
 
-    ax2.plot(zscore.index, zscore, color='red', alpha=0.5, label='Z-score')
+    ax2.plot(combined_data.index, combined_data[zscore_col], color='red', alpha=0.5, label='Z-score')
     ax2.axhline(0, color='red', linestyle='--', alpha=0.5)
     ax2.axhline(2, color='red', linestyle=':', alpha=0.3)
     ax2.axhline(-2, color='red', linestyle=':', alpha=0.3)
 
-    ax.set_title(f"{asset1} / {asset2}", fontsize=12, weight='bold')
     ax.set_ylabel("Ratio", color='blue')
     ax2.set_ylabel("Z-score", color='red')
-    ax.grid(True)
+    ax.set_title(f"{asset1} / {asset2}", fontsize=12, weight='bold')
+
     lines, labels = ax.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax.legend(lines + lines2, labels + labels2, loc='upper left')
+    ax.grid(True)
+
+# Gráfico de volatilidad realizada del SPX
+ax = axes[-1]
+ax.plot(combined_data.index, combined_data['SPX Realized Volatility'], label='Volatilidad Realizada (21d)', color='purple', linewidth=2)
+ax.set_ylabel("Volatilidad Anualizada", color='purple')
+ax.set_title("Volatilidad Realizada del S&P 500 (^SPX)", fontsize=12, weight='bold')
+ax.grid(True)
+ax.legend(loc='upper left')
 
 plt.tight_layout(rect=[0, 0, 1, 0.97])
 plt.show()
 
-# === Volatilidad realizada del S&P 500 ===
-spx_data = yf.download("^SPX", start=start_date)['Close'].dropna()
-spx_returns = np.log(spx_data / spx_data.shift(1)).dropna()
-realized_vol = spx_returns.rolling(window=21).std() * np.sqrt(252)
+# === Matriz de correlación final ===
+zscore_cols = [f"{a1}/{a2} Z-score" for a1, a2 in pairs]
+zscore_cols.append('SPX Realized Volatility')
+correlation_matrix = combined_data[zscore_cols].corr()
 
-# Calcular percentil respecto a los últimos 252*2 días (~2 años)
-realized_vol = realized_vol.dropna()
-recent_vol_window = realized_vol[-504:]
-current_vol = realized_vol.iloc[-1]
-percentile = (recent_vol_window < current_vol).mean() * 100
-percentile
-
-# Gráfico de volatilidad realizada con percentil
-plt.figure(figsize=(14, 5))
-plt.plot(realized_vol.index, realized_vol, label='Volatilidad Realizada (21 días)', color='purple', linewidth=2)
-plt.title("Volatilidad Realizada del S&P 500 (^SPX)", fontsize=14, weight='bold')
-plt.xlabel("Fecha")
-plt.ylabel("Volatilidad Anualizada")
-plt.grid(True)
-plt.legend(loc='upper left')
-
+plt.figure(figsize=(10, 6))
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
+plt.title("Matriz de Correlación entre Z-scores y Volatilidad del SPX", fontsize=14, weight='bold')
 plt.tight_layout()
-plt.show()
-
-# Create a new DataFrame to store the Z-scores and volatility
-combined_data = pd.DataFrame()
-
-# Define pairs and start date (already defined, but for clarity)
-pairs = [
-    ("HG=F", "GC=F"),   # Copper / Gold
-    ("SPHB", "SPMV"),   # High Beta / Low Volatility
-    ("HYG", "LQD")       # High Yield / Investment Grade
-]
-start_date = "2020-01-01"
-
-# Calculate and add Z-scores for each pair
-for asset1, asset2 in pairs:
-    data = yf.download([asset1, asset2], start=start_date)['Close']
-    data = data.dropna()
-
-    ratio = data[asset1] / data[asset2]
-    mean = ratio.rolling(window=120).mean()
-    std = ratio.rolling(window=120).std()
-    zscore = (ratio - mean) / std
-
-    combined_data[f"{asset1}/{asset2} Z-score"] = zscore
-
-# Calculate and add S&P 500 realized volatility
-spx_data = yf.download("^SPX", start=start_date)['Close'].dropna()
-spx_returns = np.log(spx_data / spx_data.shift(1)).dropna()
-realized_vol = spx_returns.rolling(window=21).std() * np.sqrt(252)
-
-combined_data['SPX Realized Volatility'] = realized_vol
-
-# Drop rows with any missing values
-combined_data = combined_data.dropna()
-
-# Display the first few rows of the combined DataFrame
-display(combined_data.head())
-# Matriz de correlación
-correlation_matrix = combined_data.corr()
-display(correlation_matrix)
-
-# Create figure and subplots
-fig, axes = plt.subplots(len(pairs), 1, figsize=(14, 12), sharex=True)
-fig.suptitle("Time Series of Pair Z-scores and SPX Volatility", fontsize=16, y=1.02)
-
-# Plot each pair's Z-score and SPX Volatility
-for i, (asset1, asset2) in enumerate(pairs):
-    ax = axes[i]
-    ax2 = ax.twinx()
-
-    # Plot Z-score on primary axis
-    zscore_col = f"{asset1}/{asset2} Z-score"
-    ax.plot(combined_data.index, combined_data[zscore_col], label=f"{asset1}/{asset2} Z-score", color='blue')
-    ax.set_ylabel("Z-score", color='blue')
-
-    # Plot SPX Volatility on secondary axis
-    ax2.plot(combined_data.index, combined_data['SPX Realized Volatility'], label='SPX Realized Volatility', color='purple', alpha=0.7)
-    ax2.set_ylabel("SPX Realized Volatility", color='purple')
-
-    # Add title and legend
-    ax.set_title(f"{asset1}/{asset2} Z-score and SPX Volatility", fontsize=12, weight='bold')
-    ax.grid(True)
-    lines, labels = ax.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax.legend(lines + lines2, labels + labels2, loc='upper left')
-
-# Adjust layout and show plot
-plt.tight_layout(rect=[0, 0, 1, 0.97])
 plt.show()
