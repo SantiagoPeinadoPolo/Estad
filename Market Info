@@ -1,0 +1,139 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ----------------------
+# CONFIGURACIÓN INICIAL
+start_date = "2025-07-25"  # Fecha desde la cual calcular rendimiento
+# ----------------------
+# ETFs sectoriales EE.UU.
+us_etfs = {
+    "Tecnología": "XLK",
+    "Finanzas": "XLF",
+    "Energía": "XLE",
+    "Consumo Discrecional": "XLY",
+    "Consumo Básico": "XLP",
+    "Salud": "XLV",
+    "Industriales": "XLI",
+    "Materiales": "XLB",
+    "Utilities": "XLU",
+    "Real Estate": "XLRE",
+    "Comunicación": "XLC"
+}
+
+# ETFs sectoriales Europa (iShares MSCI Europe Sector ETFs)
+eu_etfs = {
+    "Tecnología": "EXV3.DE",
+    "Finanzas": "EXX1.DE",
+    "Energía": "EXH1.DE",
+    "Consumo Discrecional": "EXV2.DE",
+    "Consumo Básico": "EXV1.DE",
+    "Salud": "EXV4.DE",
+    "Industriales": "EXH6.DE",
+    "Materiales": "EXV5.DE",
+    "Utilities": "EXH9.DE",
+    "Real Estate": "EXH8.DE",
+    "Comunicación": "EXV6.DE"
+}
+
+# Benchmarks
+indices = {
+    "S&P 500": "^GSPC",
+    "MSCI Europe": "IMEU.L"
+}
+
+# ----------------------
+# FUNCIONES
+# ----------------------
+def calcular_rendimiento_log(etfs_dict, indice_ticker, indice_nombre, start):
+    tickers = list(etfs_dict.values()) + [indice_ticker]
+    precios = yf.download(tickers, start=start)["Close"]
+    precios = precios.dropna(how="all")
+    precios = precios.ffill()
+
+    precios_iniciales = precios.iloc[0]
+    rend_log = np.log(precios / precios_iniciales)
+
+    nombres = {**etfs_dict, indice_nombre: indice_ticker}
+    columnas_renombradas = {}
+    for nombre, ticker in nombres.items():
+        for col in rend_log.columns:
+            if col == ticker:
+                columnas_renombradas[col] = nombre
+    rend_log = rend_log.rename(columns=columnas_renombradas)
+    precios = precios.rename(columns=columnas_renombradas)
+    return rend_log, precios
+
+def resumen_rendimientos(precios):
+    ult_fecha = precios.index[-1]
+    res = pd.DataFrame(index=precios.columns)
+    res["RTD"] = precios.iloc[-1] / precios.iloc[0] - 1
+    res["1M"] = precios.iloc[-1] / precios.loc[precios.index >= ult_fecha - pd.DateOffset(months=1)].iloc[0] - 1
+    res["3M"] = precios.iloc[-1] / precios.loc[precios.index >= ult_fecha - pd.DateOffset(months=3)].iloc[0] - 1
+    res["6M"] = precios.iloc[-1] / precios.loc[precios.index >= ult_fecha - pd.DateOffset(months=6)].iloc[0] - 1
+    dias = (ult_fecha - precios.index[0]).days
+    res["Anualizado"] = (1 + res["RTD"]) ** (365 / dias) - 1
+    res = res.sort_values("RTD", ascending=False)
+    return res
+
+# ----------------------
+# CÁLCULO DE RENDIMIENTOS
+# ----------------------
+rend_us, precios_us = calcular_rendimiento_log(us_etfs, "^GSPC", "S&P 500", start_date)
+rend_eu, precios_eu = calcular_rendimiento_log(eu_etfs, "IMEU.L", "MSCI Europe", start_date)
+
+ultima_fecha_us = rend_us.index[-1].strftime('%Y-%m-%d')
+ultima_fecha_eu = rend_eu.index[-1].strftime('%Y-%m-%d')
+
+resumen_us = resumen_rendimientos(precios_us)
+resumen_eu = resumen_rendimientos(precios_eu)
+
+# ----------------------
+# GRÁFICOS
+# ----------------------
+fig, ax = plt.subplots(1, 2, figsize=(18, 6), gridspec_kw={'width_ratios': [3, 1]})
+for col in rend_us.columns:
+    if col == "S&P 500":
+        ax[0].plot(rend_us.index, rend_us[col], label=col, linewidth=3, linestyle="--")
+    else:
+        ax[0].plot(rend_us.index, rend_us[col], label=col)
+ax[0].set_title(f"EE.UU. desde {start_date} hasta {ultima_fecha_us}")
+ax[0].set_ylabel("Rendimiento Log")
+ax[0].legend()
+ax[0].grid(True)
+
+ax[1].axis("off")
+tabla_us = ax[1].table(cellText=np.round(resumen_us.values*100, 2),
+                       rowLabels=resumen_us.index,
+                       colLabels=resumen_us.columns,
+                       loc="center")
+tabla_us.auto_set_font_size(False)
+tabla_us.set_fontsize(8)
+tabla_us.scale(1.2, 1.5)
+ax[1].set_title("Resumen %")
+plt.tight_layout()
+plt.show()
+
+fig, ax = plt.subplots(1, 2, figsize=(18, 6), gridspec_kw={'width_ratios': [3, 1]})
+for col in rend_eu.columns:
+    if col == "MSCI Europe":
+        ax[0].plot(rend_eu.index, rend_eu[col], label=col, linewidth=3, linestyle="--")
+    else:
+        ax[0].plot(rend_eu.index, rend_eu[col], label=col)
+ax[0].set_title(f"Europa desde {start_date} hasta {ultima_fecha_eu}")
+ax[0].set_ylabel("Rendimiento Log")
+ax[0].legend()
+ax[0].grid(True)
+
+ax[1].axis("off")
+tabla_eu = ax[1].table(cellText=np.round(resumen_eu.values*100, 2),
+                       rowLabels=resumen_eu.index,
+                       colLabels=resumen_eu.columns,
+                       loc="center")
+tabla_eu.auto_set_font_size(False)
+tabla_eu.set_fontsize(8)
+tabla_eu.scale(1.2, 1.5)
+ax[1].set_title("Resumen %")
+plt.tight_layout()
+plt.show()
